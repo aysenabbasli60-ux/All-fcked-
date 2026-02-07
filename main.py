@@ -4,30 +4,37 @@ from telethon import TelegramClient, events
 from fastapi import FastAPI, Query, HTTPException
 from dotenv import load_dotenv
 
-# Load environment variables
+# Optional: Pillow fallback for imghdr replacement if needed
+try:
+    import imghdr
+except ModuleNotFoundError:
+    from PIL import Image
+
 load_dotenv()
+
+# ---- ENVIRONMENT VARIABLES ----
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-SESSION_NAME = os.getenv("SESSION_NAME")
-GROUP_ID = int(os.getenv("GROUP_ID"))
+SESSION_NAME = os.getenv("SESSION_NAME")   # Example: 'session'
+GROUP_ID = int(os.getenv("GROUP_ID"))      # Example: -1001234567890
 API_KEY = os.getenv("API_KEY")
 
-# Initialize FastAPI
-app = FastAPI()
+# ---- TELETHON CLIENT ----
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
-# Pending queries storage
-pending = {}
+# ---- FASTAPI ----
+app = FastAPI()
+pending = {}  # store user queries
 
-# Start Telethon client
+# ---- START TELETHON CLIENT ----
 async def start_client():
     await client.start()
-    print("Userbot client started")
+    print("✅ Userbot client started")
 
 loop = asyncio.get_event_loop()
 loop.create_task(start_client())
 
-# Listen for replies in group
+# ---- HANDLE REPLIES IN GROUP ----
 @client.on(events.NewMessage(chats=GROUP_ID))
 async def handler(event):
     if event.is_reply:
@@ -36,7 +43,7 @@ async def handler(event):
             if data['msg_id'] == reply_to_id:
                 data['future'].set_result(event.text)
 
-# API Endpoint
+# ---- API ENDPOINT ----
 @app.get("/ask")
 async def ask(
     user: str = Query(...),
@@ -46,14 +53,15 @@ async def ask(
     if key != API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # Send query to group
+    # Send message to Telegram group
     msg = await client.send_message(GROUP_ID, f"/tg {text}")
 
-    # Wait for reply
+    # Prepare future to wait for reply
     future = loop.create_future()
     pending[user] = {"msg_id": msg.id, "future": future}
 
     try:
+        # Wait max 20 sec for reply
         reply = await asyncio.wait_for(future, timeout=20)
     except asyncio.TimeoutError:
         reply = "No reply yet"
@@ -61,7 +69,7 @@ async def ask(
     pending.pop(user, None)
     return {"reply": reply}
 
-# Run server on Render port
+# ---- RUN SERVER ----
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
