@@ -4,12 +4,6 @@ from telethon import TelegramClient, events
 from fastapi import FastAPI, Query, HTTPException
 from dotenv import load_dotenv
 
-# Optional: Pillow fallback for imghdr replacement if needed
-try:
-    import imghdr
-except ModuleNotFoundError:
-    from PIL import Image
-
 load_dotenv()
 
 # ---- ENVIRONMENT VARIABLES ----
