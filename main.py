@@ -4,13 +4,14 @@ from telethon import TelegramClient, events
 from fastapi import FastAPI, Query, HTTPException
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 
 # ---- ENVIRONMENT VARIABLES ----
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-SESSION_NAME = os.getenv("SESSION_NAME")   # Example: 'session'
-GROUP_ID = int(os.getenv("GROUP_ID"))      # Example: -1001234567890
+SESSION_NAME = os.getenv("SESSION_NAME")  # Example: 'session'
+GROUP_ID = int(os.getenv("GROUP_ID"))     # Example: -1001234567890
 API_KEY = os.getenv("API_KEY")
 
 # ---- TELETHON CLIENT ----
@@ -18,7 +19,7 @@ client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 
 # ---- FASTAPI ----
 app = FastAPI()
-pending = {}  # store user queries
+pending = {}  # Store user queries
 
 # ---- START TELETHON CLIENT ----
 async def start_client():
