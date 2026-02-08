@@ -1,79 +1,94 @@
-import os
 import asyncio
+import time
+import os
+from fastapi import FastAPI, Query
 from telethon import TelegramClient, events
-from fastapi import FastAPI, Query, HTTPException
-from dotenv import load_dotenv
+from telethon.sessions import StringSession
 
-load_dotenv()
+# ===== CONFIG FROM ENV =====
 
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-SESSION_NAME = os.getenv("SESSION_NAME")
+SESSION = os.getenv("SESSION")
 GROUP_ID = int(os.getenv("GROUP_ID"))
-API_KEY = os.getenv("API_KEY")
 
-client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+TIMEOUT = 20
+
+# ===========================
+
 app = FastAPI()
 
-# pending[user] = {msg_id, future, count}
-pending = {}
+client = TelegramClient(
+    StringSession(SESSION),
+    API_ID,
+    API_HASH
+)
 
-# ---- START CLIENT ----
+reply_store = {}
+lock = asyncio.Lock()
+
+
 @app.on_event("startup")
-async def startup_event():
+async def startup():
     await client.start()
-    print("✅ Client started")
+    print("✅ Telegram client started")
 
-# ---- HANDLE REPLIES ----
+
 @client.on(events.NewMessage(chats=GROUP_ID))
 async def handler(event):
-
-    if not event.is_reply:
+    text = event.raw_text.strip()
+    if not text:
         return
 
-    reply_to = event.reply_to_msg_id
+    async with lock:
+        for key in reply_store:
+            data = reply_store[key]
+            if not data["done"]:
+                data["count"] += 1
 
-    for user, data in list(pending.items()):
+                # SECOND REPLY ONLY
+                if data["count"] == 2:
+                    data["reply"] = text
+                    data["done"] = True
+                break
 
-        # reply should be to our message
-        if reply_to == data["msg_id"]:
 
-            data["count"] += 1
-            print(f"Reply #{data['count']}")
+@app.get("/")
+async def root():
+    return {"status": "running"}
 
-            # send ONLY second reply
-            if data["count"] == 2:
-                if not data["future"].done():
-                    data["future"].set_result(event.text)
 
-# ---- API ----
 @app.get("/ask")
-async def ask(user: str, text: str, key: str):
+async def ask(text: str = Query(...)):
+    uid = str(time.time())
 
-    if key != API_KEY:
-        raise HTTPException(status_code=403)
+    async with lock:
+        reply_store[uid] = {
+            "count": 0,
+            "reply": None,
+            "done": False
+        }
 
-    # send command
-    msg = await client.send_message(GROUP_ID, f"/num {text}")
+    await client.send_message(GROUP_ID, text)
 
-    future = asyncio.get_event_loop().create_future()
+    start = time.time()
 
-    pending[user] = {
-        "msg_id": msg.id,
-        "future": future,
-        "count": 0
-    }
+    while time.time() - start < TIMEOUT:
+        async with lock:
+            if reply_store[uid]["done"]:
+                r = reply_store[uid]["reply"]
+                del reply_store[uid]
+                return {"success": True, "reply": r}
 
-    try:
-        reply = await asyncio.wait_for(future, timeout=40)
-    except asyncio.TimeoutError:
-        reply = "Second reply not received"
+        await asyncio.sleep(0.5)
 
-    pending.pop(user, None)
+    async with lock:
+        del reply_store[uid]
 
-    return {"reply": reply}
+    return {"success": False, "error": "Timeout"}
 
-# ---- RUN ----
+
+# Render needs this
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
