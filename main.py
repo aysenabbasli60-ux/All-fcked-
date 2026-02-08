@@ -17,7 +17,7 @@ TARGET_REPLY_INDEX = 2
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 app = FastAPI()
 
-# pending[user] = {msg_id, future, replies[], last_reply_id}
+# pending[user] = {msg_id, future, count}
 pending = {}
 
 # ---- START TELETHON CLIENT ----
@@ -26,31 +26,22 @@ async def startup_event():
     await client.start()
     print("✅ Userbot client started")
 
-# ---- HANDLE REPLIES ----
+# ---- HANDLE GROUP MESSAGES ----
 @client.on(events.NewMessage(chats=GROUP_ID))
 async def handler(event):
-    if not event.is_reply:
-        return
-
-    reply_to_id = event.reply_to_msg_id
 
     for user, data in list(pending.items()):
 
-        # Accept reply if it's to:
-        # 1) original message
-        # 2) OR last bot reply (reply chain)
-        if reply_to_id in [data["msg_id"], data.get("last_reply_id")]:
+        # Sirf un messages ko count karo jo hamare bheje msg ke baad aaye
+        if event.id <= data["msg_id"]:
+            continue
 
-            data["replies"].append(event.text)
-            data["last_reply_id"] = event.id
+        data["count"] += 1
+        print(f"📩 Msg #{data['count']} received")
 
-            print(f"📩 Reply #{len(data['replies'])}")
-
-            if len(data["replies"]) >= TARGET_REPLY_INDEX:
-                if not data["future"].done():
-                    data["future"].set_result(
-                        data["replies"][TARGET_REPLY_INDEX - 1]
-                    )
+        if data["count"] == TARGET_REPLY_INDEX:
+            if not data["future"].done():
+                data["future"].set_result(event.text)
 
 # ---- API ENDPOINT ----
 @app.get("/ask")
@@ -62,6 +53,7 @@ async def ask(
     if key != API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
+    # same as before
     msg = await client.send_message(GROUP_ID, f"/num {text}")
 
     loop = asyncio.get_event_loop()
@@ -70,14 +62,13 @@ async def ask(
     pending[user] = {
         "msg_id": msg.id,
         "future": future,
-        "replies": [],
-        "last_reply_id": None
+        "count": 0
     }
 
     try:
         reply = await asyncio.wait_for(future, timeout=40)
     except asyncio.TimeoutError:
-        reply = "Timeout: Not enough replies"
+        reply = "Timeout: Not enough messages"
 
     pending.pop(user, None)
 
