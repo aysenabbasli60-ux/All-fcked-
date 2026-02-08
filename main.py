@@ -15,6 +15,8 @@ API_KEY = os.getenv("API_KEY")
 
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 app = FastAPI()
+
+# store by msg_id instead of user (multi-user safe)
 pending = {}
 
 # ---- START TELETHON CLIENT ----
@@ -26,19 +28,20 @@ async def startup_event():
 # ---- HANDLE REPLIES ----
 @client.on(events.NewMessage(chats=GROUP_ID))
 async def handler(event):
-    if event.is_reply:
-        reply_to_id = event.reply_to_msg_id
+    if not event.is_reply:
+        return
 
-        for user, data in pending.copy().items():
-            # Check message id match
-            if data['msg_id'] == reply_to_id:
+    data = pending.get(event.reply_to_msg_id)
 
-                # ✅ Ignore replies before 2 sec
-                if event.date < data['min_time']:
-                    return
+    if not data:
+        return
 
-                if not data['future'].done():
-                    data['future'].set_result(event.text)
+    # Ignore replies before 2 sec
+    if event.date < data["min_time"]:
+        return
+
+    if not data["future"].done():
+        data["future"].set_result(event.text)
 
 # ---- API ENDPOINT ----
 @app.get("/ask")
@@ -53,22 +56,20 @@ async def ask(
     # Send message
     msg = await client.send_message(GROUP_ID, f"/num {text}")
 
-    # ✅ Set minimum valid reply time
-    min_time = datetime.utcnow() + timedelta(seconds=2)
-
     future = asyncio.get_event_loop().create_future()
-    pending[user] = {
-        "msg_id": msg.id,
+
+    pending[msg.id] = {
         "future": future,
-        "min_time": min_time
+        "min_time": datetime.utcnow() + timedelta(seconds=2)
     }
 
     try:
-        reply = await asyncio.wait_for(future, timeout=30)
+        reply = await asyncio.wait_for(future, timeout=25)
     except asyncio.TimeoutError:
         reply = "No valid reply after 2 sec"
+    finally:
+        pending.pop(msg.id, None)  # cleanup
 
-    pending.pop(user, None)
     return {"reply": reply}
 
 # ---- RUN SERVER ----
