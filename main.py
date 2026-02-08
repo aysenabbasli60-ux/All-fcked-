@@ -50,7 +50,7 @@ async def ask(
     pending[user] = {"msg_id": msg.id, "future": future}
 
     try:
-        reply = await asyncio.wait_for(future, timeout=20)
+        reply = await asyncio.wait_for(future, timeout=40)
     except asyncio.TimeoutError:
         reply = "No reply yet"
 
