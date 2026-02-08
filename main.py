@@ -12,13 +12,12 @@ SESSION_NAME = os.getenv("SESSION_NAME")
 GROUP_ID = int(os.getenv("GROUP_ID"))
 API_KEY = os.getenv("API_KEY")
 
-# ---- CONFIG ----
-TARGET_REPLY_INDEX = 2  # 2 = second reply, 3 = third reply, etc.
+TARGET_REPLY_INDEX = 2
 
 client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
 app = FastAPI()
 
-# pending[user] = {msg_id, future, replies[]}
+# pending[user] = {msg_id, future, replies[], last_reply_id}
 pending = {}
 
 # ---- START TELETHON CLIENT ----
@@ -36,14 +35,17 @@ async def handler(event):
     reply_to_id = event.reply_to_msg_id
 
     for user, data in list(pending.items()):
-        if data["msg_id"] == reply_to_id:
 
-            # store reply
+        # Accept reply if it's to:
+        # 1) original message
+        # 2) OR last bot reply (reply chain)
+        if reply_to_id in [data["msg_id"], data.get("last_reply_id")]:
+
             data["replies"].append(event.text)
+            data["last_reply_id"] = event.id
 
-            print(f"📩 Reply #{len(data['replies'])} received")
+            print(f"📩 Reply #{len(data['replies'])}")
 
-            # check if target reached
             if len(data["replies"]) >= TARGET_REPLY_INDEX:
                 if not data["future"].done():
                     data["future"].set_result(
@@ -60,30 +62,26 @@ async def ask(
     if key != API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # send message
     msg = await client.send_message(GROUP_ID, f"/num {text}")
 
-    # create future
     loop = asyncio.get_event_loop()
     future = loop.create_future()
 
     pending[user] = {
         "msg_id": msg.id,
         "future": future,
-        "replies": []
+        "replies": [],
+        "last_reply_id": None
     }
 
     try:
         reply = await asyncio.wait_for(future, timeout=40)
     except asyncio.TimeoutError:
         reply = "Timeout: Not enough replies"
-    
+
     pending.pop(user, None)
 
-    return {
-        "reply": reply,
-        "total_replies_received": len(pending.get(user, {}).get("replies", []))
-    }
+    return {"reply": reply}
 
 # ---- RUN SERVER ----
 if __name__ == "__main__":
