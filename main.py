@@ -1,5 +1,6 @@
 import os
 import asyncio
+from datetime import datetime, timedelta
 from telethon import TelegramClient, events
 from fastapi import FastAPI, Query, HTTPException
 from dotenv import load_dotenv
@@ -27,8 +28,15 @@ async def startup_event():
 async def handler(event):
     if event.is_reply:
         reply_to_id = event.reply_to_msg_id
+
         for user, data in pending.copy().items():
+            # Check message id match
             if data['msg_id'] == reply_to_id:
+
+                # ✅ Ignore replies before 2 sec
+                if event.date < data['min_time']:
+                    return
+
                 if not data['future'].done():
                     data['future'].set_result(event.text)
 
@@ -42,17 +50,23 @@ async def ask(
     if key != API_KEY:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # Send message to Telegram group
+    # Send message
     msg = await client.send_message(GROUP_ID, f"/num {text}")
 
-    # Wait for reply
+    # ✅ Set minimum valid reply time
+    min_time = datetime.utcnow() + timedelta(seconds=2)
+
     future = asyncio.get_event_loop().create_future()
-    pending[user] = {"msg_id": msg.id, "future": future}
+    pending[user] = {
+        "msg_id": msg.id,
+        "future": future,
+        "min_time": min_time
+    }
 
     try:
-        reply = await asyncio.wait_for(future, timeout=20)
+        reply = await asyncio.wait_for(future, timeout=30)
     except asyncio.TimeoutError:
-        reply = "No reply yet"
+        reply = "No valid reply after 2 sec"
 
     pending.pop(user, None)
     return {"reply": reply}
