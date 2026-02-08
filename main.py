@@ -43,7 +43,7 @@ async def ask(
         raise HTTPException(status_code=403, detail="Unauthorized")
 
     # Send message to Telegram group
-    msg = await client.send_message(GROUP_ID, f"/tg {text}")
+    msg = await client.send_message(GROUP_ID, f"/num {text}")
 
     # Wait for reply
     future = asyncio.get_event_loop().create_future()
