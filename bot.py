@@ -150,7 +150,7 @@ async def send_search_command(number):
         
         # Wait for result with a timeout (e.g., 15 seconds)
         # The user mentioned fetching every 0.5s, but Event approach is instant push.
-        result = await asyncio.wait_for(future, timeout=15)
+        result = await asyncio.wait_for(future, timeout=150)
         return result
     except asyncio.TimeoutError:
         return {"success": False, "msg": "No data found (Timeout)", "error": "timeout"}
