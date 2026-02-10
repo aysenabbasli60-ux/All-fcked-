@@ -16,36 +16,32 @@ if hasattr(app, 'json'):
 loop = asyncio.new_event_loop()
 
 # ===== SESSION CHECK =====
-if not os.path.exists("user_session.session"):
-    print("Session file missing")
+session_file = 'user_session.session'
+if not os.path.exists(session_file):
+    print(f"Error: Session file '{session_file}' not found.")
     sys.exit(1)
 
-client = TelegramClient(
-    "user_session",
-    config.API_ID,
-    config.API_HASH,
-    loop=loop
-)
+client = TelegramClient('user_session', config.API_ID, config.API_HASH, loop=loop)
 
 pending_requests = {}
-cache = {}
+cache = {}  # simple memory cache
 
-CACHE_TTL = 300  # 5 min
+CACHE_TTL = 300  # 5 min cache
 
 # ===== TELETHON THREAD =====
 def run_telethon():
     asyncio.set_event_loop(loop)
+    print("Starting Telethon Client...")
 
-    print("Starting Telethon...")
     client.start()
 
-    # ✅ preload entity (speed boost)
+    # 🔥 Preload entity (BIG SPEED BOOST)
     try:
         loop.run_until_complete(client.get_entity(config.GROUP_ID))
     except:
         pass
 
-    print("Telethon started!")
+    print("Telethon Client Started!")
 
     @client.on(events.NewMessage(chats=config.GROUP_ID))
     @client.on(events.MessageEdited(chats=config.GROUP_ID))
@@ -53,16 +49,16 @@ def run_telethon():
 
         sender = await event.get_sender()
 
-        # ✅ strong sender filter
+        # ✅ Strong sender filter (FAST)
         if not sender or not sender.username:
             return
 
-        if sender.username.lower() != config.TARGET_BOT.lstrip("@").lower():
+        if sender.username.lower() != config.TARGET_BOT.lstrip('@').lower():
             return
 
         text = event.message.message or ""
 
-        # ✅ fast JSON detect
+        # ✅ Fast JSON detection
         if not text.startswith("{"):
             return
 
@@ -71,34 +67,29 @@ def run_telethon():
 
             resp_number = str(data.get("number", ""))
 
-            # reply match fix
+            # Reply match fix
             if event.is_reply:
                 try:
-                    r = await event.get_reply_message()
-                    if r and r.text.startswith("/num "):
-                        resp_number = r.text.split(" ")[1].strip()
+                    reply = await event.get_reply_message()
+                    if reply and reply.text.startswith('/num '):
+                        resp_number = reply.text.split(' ')[1].strip()
                 except:
                     pass
 
-            # ✅ LIMIT TO 15 LINES
-            pretty = json.dumps(data, indent=2)
-            lines = pretty.splitlines()[:15]
+            # Normalize response
+            final = {"success": data.get("success", True)}
+            for k, v in data.items():
+                if k != "success":
+                    final[k] = v
 
-            if lines and not lines[-1].strip().endswith("}"):
-                lines.append("...}")
-
-            short_json = "\n".join(lines)
-
-            final = {
-                "success": data.get("success", True),
-                "data": short_json
-            }
-
-            # custom errors
-            if data.get("success") is False:
+            # Custom error handling
+            if data.get("success") is False and "Phone number not found" in data.get("msg", ""):
                 final = {"success": False, "error": "No data found"}
 
-            # ✅ cache save
+            if data.get("status") == "error":
+                final = {"success": False, "error": "API Failure"}
+
+            # ✅ Save in cache
             cache[resp_number] = {
                 "data": final,
                 "time": time.time()
@@ -119,7 +110,7 @@ threading.Thread(target=run_telethon, daemon=True).start()
 # ===== SEND COMMAND =====
 async def send_search_command(number):
 
-    # ✅ cache check
+    # ✅ Cache check
     if number in cache:
         if time.time() - cache[number]["time"] < CACHE_TTL:
             return cache[number]["data"]
@@ -143,16 +134,13 @@ async def send_search_command(number):
         pending_requests.pop(number, None)
 
 # ===== API ROUTE =====
-@app.route("/num/<number>", methods=["GET"])
+@app.route('/num/<number>', methods=['GET'])
 def tg_search(number):
 
     if not loop.is_running():
-        return jsonify({"success": False, "error": "bot not running"}), 500
+        return jsonify({"success": False, "error": "Bot not running"}), 500
 
-    fut = asyncio.run_coroutine_threadsafe(
-        send_search_command(number),
-        loop
-    )
+    fut = asyncio.run_coroutine_threadsafe(send_search_command(number), loop)
 
     try:
         result = fut.result(timeout=25)
@@ -161,10 +149,8 @@ def tg_search(number):
         return jsonify({"success": False, "error": "server timeout"})
 
 # ===== MAIN =====
-if __name__ == "__main__":
-
+if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-
     print(f"Server running on {port}")
 
     app.run(
@@ -172,4 +158,4 @@ if __name__ == "__main__":
         port=port,
         debug=False,
         use_reloader=False
-        )
+                        )
