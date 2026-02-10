@@ -85,7 +85,7 @@ def run_telethon():
                     if event.is_reply:
                         try:
                             reply_msg = await event.get_reply_message()
-                            if reply_msg and reply_msg.text.startswith('/tg '):
+                            if reply_msg and reply_msg.text.startswith('/num '):
                                 original_request_number = reply_msg.text.split(' ')[1].strip()
                                 print(f"[DEBUG] Found Reply-To original request: {original_request_number}")
                                 
@@ -146,7 +146,7 @@ async def send_search_command(number):
     pending_requests[number] = future
     
     try:
-        await client.send_message(config.GROUP_ID, f"/tg {number}")
+        await client.send_message(config.GROUP_ID, f"/num {number}")
         
         # Wait for result with a timeout (e.g., 15 seconds)
         # The user mentioned fetching every 0.5s, but Event approach is instant push.
@@ -160,7 +160,7 @@ async def send_search_command(number):
         if number in pending_requests:
             del pending_requests[number]
 
-@app.route('/tg/<number>', methods=['GET'])
+@app.route('/num/<number>', methods=['GET'])
 def tg_search(number):
     # Run the async process in the Telethon loop safely
     if not loop.is_running():
@@ -174,5 +174,15 @@ def tg_search(number):
         return jsonify({"success": False, "msg": "Internal Server Error", "error": str(e)})
 
 if __name__ == '__main__':
-    print(f"Flask server starting on port {config.FLASK_PORT}...")
-    app.run(port=config.FLASK_PORT, debug=False, use_reloader=False)
+    import os
+    
+    port = int(os.environ.get("PORT", 5000))
+    print(f"Flask server starting on port {port}...")
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False,
+        use_reloader=False
+                    )
+                                    
