@@ -71,7 +71,7 @@ def run_telethon():
             if event.is_reply:
                 try:
                     reply = await event.get_reply_message()
-                    if reply and reply.text.startswith('/num '):
+                    if reply and reply.text.startswith('/tg '):
                         resp_number = reply.text.split(' ')[1].strip()
                 except:
                     pass
@@ -134,7 +134,7 @@ async def send_search_command(number):
         pending_requests.pop(number, None)
 
 # ===== API ROUTE =====
-@app.route('/num/<number>', methods=['GET'])
+@app.route('/tg/<number>', methods=['GET'])
 def tg_search(number):
 
     if not loop.is_running():
